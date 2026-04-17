@@ -1,0 +1,36 @@
+{
+  "name": "@string-os/astro-sfmd",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Astro integration for building SFMD-native sites. Dual output: styled HTML for browsers, raw markdown for AI agents.",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/sfmd.ts",
+    "./layouts/Base.astro": "./src/layouts/Base.astro",
+    "./pages/[...slug].astro": "./src/pages/[...slug].astro",
+    "./styles/global.css": "./src/styles/global.css",
+    "./scripts/copy-sfmd.mjs": "./scripts/copy-sfmd.mjs"
+  },
+  "files": [
+    "src/",
+    "scripts/"
+  ],
+  "dependencies": {
+    "marked": "^18.0.0"
+  },
+  "peerDependencies": {
+    "astro": "^6.0.0"
+  },
+  "keywords": [
+    "astro",
+    "sfmd",
+    "string",
+    "markdown",
+    "ai-native",
+    "content-negotiation"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/string-os/astro-sfmd.git"
+  }
+}

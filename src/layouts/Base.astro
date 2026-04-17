@@ -1,0 +1,43 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  nav: { id: string; label: string; href: string }[];
+}
+
+const { title, nav } = Astro.props;
+const siteTitle = 'String';
+const pageTitle = title ? `${title}` : siteTitle;
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{pageTitle}</title>
+  <meta name="description" content="The markdown browser for AI agents. SFMD is to agents what HTML is to browsers." />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+</head>
+<body>
+  <div class="site-layout">
+    <nav class="site-nav">
+      <a href="/" class="logo">⌘ String</a>
+      {nav.length > 0 && (
+        <ul>
+          {nav.map(entry => (
+            <li><a href={entry.href}>{entry.label}</a></li>
+          ))}
+        </ul>
+      )}
+    </nav>
+    <main class="site-content">
+      <slot />
+    </main>
+  </div>
+  <footer class="site-footer">
+    MIT Licensed. <a href="https://github.com/string-os/string">Source on GitHub</a>.
+  </footer>
+</body>
+</html>

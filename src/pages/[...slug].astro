@@ -1,0 +1,21 @@
+---
+import Base from '../layouts/Base.astro';
+import { listContentFiles, parseSfmdFile } from '../lib/sfmd';
+
+export function getStaticPaths() {
+  const files = listContentFiles();
+  return files.map(({ filePath, slug }) => {
+    const page = parseSfmdFile(filePath);
+    return {
+      params: { slug: slug || undefined },
+      props: { page },
+    };
+  });
+}
+
+const { page } = Astro.props;
+---
+
+<Base title={page.title} nav={page.nav}>
+  <Fragment set:html={page.htmlBody} />
+</Base>
