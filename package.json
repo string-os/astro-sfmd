@@ -6,6 +6,8 @@
   "license": "MIT",
   "exports": {
     ".": "./src/sfmd.ts",
+    "./negotiate": "./src/negotiate.ts",
+    "./middleware": "./src/middleware.ts",
     "./layouts/Base.astro": "./src/layouts/Base.astro",
     "./pages/[...slug].astro": "./src/pages/[...slug].astro",
     "./styles/global.css": "./src/styles/global.css",
