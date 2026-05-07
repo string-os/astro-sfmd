@@ -1,12 +1,19 @@
 /**
  * Astro integration: dual-output for SFMD-aware sites.
  *
- * Adds two things to any Astro project (vanilla, Starlight, or otherwise):
+ * One build, two surfaces:
  *
- *   1. A remark plugin that strips `.md` from local link URLs in the HTML
- *      output, so humans land on pretty `/path/` URLs.
- *   2. A post-build mirror that copies the source `.md` tree into `dist/`
- *      so each page is reachable as `/path.md` for AI agents reading raw.
+ *   1. Astro core renders the human-facing HTML site to `dist/<page>/`.
+ *   2. This integration takes the source `.md` tree + Astro's sidebar
+ *      info and produces the AI-facing surface alongside it:
+ *        - mirrors source `.md` files to `dist/<path>.md`
+ *        - generates `dist/nav/main.md` from the sidebar (when enabled)
+ *        - injects a `[!nav:main](/nav/main.md)` directive into each
+ *          mirrored `.md` so an agent landing on any page can traverse
+ *          the whole site
+ *      Plus a remark plugin that strips `.md` from local link URLs in
+ *      the HTML output, so humans land on pretty `/path/` URLs while
+ *      the mirrored sources keep their `.md` links for raw traversal.
  *
  * Usage:
  *
@@ -14,22 +21,28 @@
  *   import starlight from '@astrojs/starlight';
  *   import sfmd from '@string-os/astro-sfmd/integration';
  *
+ *   const sidebar = [
+ *     { label: 'Getting Started', items: [{ slug: 'start/quickstart' }] },
+ *     // …
+ *   ];
+ *
  *   export default defineConfig({
  *     integrations: [
- *       starlight({ ... }),
- *       sfmd({ contentDir: 'src/content/docs' }),
+ *       starlight({ sidebar }),
+ *       sfmd({ contentDir: 'src/content/docs', sidebar }),
  *     ],
  *   });
  *
- * The integration is framework-agnostic — it works alongside Starlight,
- * a custom Astro project, or anything else that produces an HTML build
- * from `.md` sources.
+ * Or omit `sidebar` (defaults to `'auto'`) to walk the contentDir
+ * filesystem alphabetically — same shape as Starlight's auto sidebar.
  */
 
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import remarkStripMdLinks from './remark-strip-md-links.mjs';
 import { mirrorMarkdown } from './mirror.mjs';
+import { buildNav, renderNavFile, injectNavDirective } from './sidebar.mjs';
 
 /**
  * @param {object} [options]
@@ -41,6 +54,13 @@ import { mirrorMarkdown } from './mirror.mjs';
  *   Source files mirrored to `dist/` keep their `.md` links.
  * @param {boolean} [options.mirror=true] - Mirror `.md` sources into `dist/`
  *   after build. Set false if you want to handle this yourself (e.g. SSR setups).
+ * @param {'auto' | object[] | false} [options.sidebar='auto'] - Source for
+ *   the agent-facing nav file. Pass the same Starlight-format sidebar array
+ *   you give to `starlight({ sidebar })`, or `'auto'` to derive it from the
+ *   filesystem (top-level dirs as groups, alphabetical, frontmatter `title`
+ *   used as label when present). Pass `false` to skip nav generation.
+ * @param {string} [options.navName='main'] - The nav directive name
+ *   (`[!nav:<name>](...)`). Default `main`.
  * @returns {import('astro').AstroIntegration}
  */
 export default function sfmd(options = {}) {
@@ -48,6 +68,8 @@ export default function sfmd(options = {}) {
     contentDir,
     stripMdLinksInHtml = true,
     mirror = true,
+    sidebar = 'auto',
+    navName = 'main',
   } = options;
 
   if (!contentDir) {
@@ -57,6 +79,8 @@ export default function sfmd(options = {}) {
       `e.g. sfmd({ contentDir: 'src/content/docs' }).`
     );
   }
+
+  const navPath = `/nav/${navName}.md`;
 
   return {
     name: '@string-os/astro-sfmd',
@@ -74,9 +98,41 @@ export default function sfmd(options = {}) {
         if (!mirror) return;
         const srcAbs = path.resolve(process.cwd(), contentDir);
         const destAbs = fileURLToPath(dir);
+
+        // Build nav entries (or null if disabled / empty).
+        let navEntries = null;
+        if (sidebar !== false) {
+          try {
+            const entries = buildNav({ contentDir: srcAbs, sidebar });
+            if (entries && entries.length > 0) navEntries = entries;
+          } catch (err) {
+            logger.warn(`Could not build nav: ${err.message}. Continuing without nav.`);
+          }
+        }
+
         try {
-          const n = mirrorMarkdown(srcAbs, destAbs);
+          // Mirror sources, optionally injecting the [!nav:...] directive.
+          // The nav file itself (mirrored from a source if it exists) is
+          // skipped — directive on a nav file would be self-referential.
+          const transform = navEntries
+            ? (source, relPath) => {
+                if (relPath.startsWith('nav/')) return source;
+                return injectNavDirective(source, { name: navName, navPath });
+              }
+            : undefined;
+
+          const n = mirrorMarkdown(srcAbs, destAbs, transform ? { transform } : undefined);
           logger.info(`Mirrored ${n} .md file(s) from ${contentDir} to dist/`);
+
+          // Write generated nav file. Overwrites any nav/main.md that may
+          // have come from sources — this is intentional: the integration
+          // owns the nav surface.
+          if (navEntries) {
+            const navOutPath = path.join(destAbs, 'nav', `${navName}.md`);
+            fs.mkdirSync(path.dirname(navOutPath), { recursive: true });
+            fs.writeFileSync(navOutPath, renderNavFile(navEntries));
+            logger.info(`Generated ${navPath} with ${navEntries.length} entries`);
+          }
         } catch (err) {
           logger.error(`Failed to mirror .md files: ${err.message}`);
           throw err;
