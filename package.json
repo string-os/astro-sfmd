@@ -5,7 +5,7 @@
   "description": "Astro integration for building SFMD-native sites. Dual output: styled HTML for browsers, raw markdown for AI agents.",
   "license": "MIT",
   "bin": {
-    "astro-sfmd": "./scripts/cli.mjs"
+    "astro-sfmd": "scripts/cli.mjs"
   },
   "exports": {
     ".": "./src/sfmd.ts",
@@ -40,6 +40,6 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/string-os/astro-sfmd.git"
+    "url": "git+https://github.com/string-os/astro-sfmd.git"
   }
 }
