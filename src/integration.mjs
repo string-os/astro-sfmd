@@ -61,6 +61,11 @@ import { buildNav, renderNavFile, injectNavDirective } from './sidebar.mjs';
  *   used as label when present). Pass `false` to skip nav generation.
  * @param {string} [options.navName='main'] - The nav directive name
  *   (`[!nav:<name>](...)`). Default `main`.
+ * @param {(relPath: string) => string} [options.mapOutputPath] - Optional
+ *   source-relative `.md` path mapper for the mirrored SFMD output. By
+ *   default, nested `index.md` files collapse to route twins
+ *   (`blog/index.md` -> `blog.md`). Use a custom mapper when Astro routes
+ *   differ from the content tree, e.g. default-language i18n.
  * @returns {import('astro').AstroIntegration}
  */
 export default function sfmd(options = {}) {
@@ -70,6 +75,7 @@ export default function sfmd(options = {}) {
     mirror = true,
     sidebar = 'auto',
     navName = 'main',
+    mapOutputPath,
   } = options;
 
   if (!contentDir) {
@@ -81,6 +87,7 @@ export default function sfmd(options = {}) {
   }
 
   const navPath = `/nav/${navName}.md`;
+  const outputPathMapper = mapOutputPath ?? defaultOutputPath;
 
   return {
     name: '@string-os/astro-sfmd',
@@ -103,7 +110,7 @@ export default function sfmd(options = {}) {
         let navEntries = null;
         if (sidebar !== false) {
           try {
-            const entries = buildNav({ contentDir: srcAbs, sidebar });
+            const entries = buildNav({ contentDir: srcAbs, sidebar, mapOutputPath: outputPathMapper });
             if (entries && entries.length > 0) navEntries = entries;
           } catch (err) {
             logger.warn(`Could not build nav: ${err.message}. Continuing without nav.`);
@@ -121,7 +128,7 @@ export default function sfmd(options = {}) {
               }
             : undefined;
 
-          const n = mirrorMarkdown(srcAbs, destAbs, transform ? { transform } : undefined);
+          const n = mirrorMarkdown(srcAbs, destAbs, { transform, mapOutputPath: outputPathMapper });
           logger.info(`Mirrored ${n} .md file(s) from ${contentDir} to dist/`);
 
           // Write generated nav file. Overwrites any nav/main.md that may
@@ -140,4 +147,8 @@ export default function sfmd(options = {}) {
       },
     },
   };
+}
+
+function defaultOutputPath(relPath) {
+  return relPath.replace(/\/index\.(md|mdx)$/, '.$1');
 }

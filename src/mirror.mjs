@@ -20,10 +20,15 @@ import path from 'path';
  *   Optional callback to rewrite the file body. Called with the raw source
  *   and the path relative to srcDir (using `/` separators on all platforms).
  *   Return the body to write. If omitted, files are copied byte-for-byte.
+ * @param {(relPath: string) => string} [options.mapOutputPath]
+ *   Optional callback to change where a mirrored file is written inside
+ *   dist/. The callback receives the source-relative path, e.g.
+ *   `en/blog/index.md`, and returns the dist-relative path, e.g.
+ *   `blog.md`. Return paths should use `/`; absolute paths are rejected.
  * @returns {number} Count of files mirrored.
  */
 export function mirrorMarkdown(srcDir, destDir, options = {}) {
-  const { transform } = options;
+  const { transform, mapOutputPath } = options;
   let count = 0;
 
   function walk(dir) {
@@ -33,7 +38,8 @@ export function mirrorMarkdown(srcDir, destDir, options = {}) {
         walk(srcPath);
       } else if (entry.name.endsWith('.md') || entry.name.endsWith('.mdx')) {
         const relPath = path.relative(srcDir, srcPath).split(path.sep).join('/');
-        const destPath = path.join(destDir, relPath);
+        const outRelPath = mapOutputPath ? normalizeOutPath(mapOutputPath(relPath), relPath) : relPath;
+        const destPath = path.join(destDir, outRelPath);
         fs.mkdirSync(path.dirname(destPath), { recursive: true });
         if (transform) {
           const source = fs.readFileSync(srcPath, 'utf8');
@@ -52,4 +58,15 @@ export function mirrorMarkdown(srcDir, destDir, options = {}) {
 
   walk(srcDir);
   return count;
+}
+
+function normalizeOutPath(outPath, relPath) {
+  if (typeof outPath !== 'string' || outPath.trim() === '') {
+    throw new Error(`mapOutputPath returned an empty path for ${relPath}`);
+  }
+  const normalized = outPath.replace(/\\/g, '/').replace(/^\/+/, '');
+  if (normalized.startsWith('../') || normalized.includes('/../')) {
+    throw new Error(`mapOutputPath must stay inside dist/: ${outPath}`);
+  }
+  return normalized;
 }

@@ -24,14 +24,15 @@ import path from 'path';
  * @param {object} opts
  * @param {string} opts.contentDir - Absolute path to `.md` content root.
  * @param {'auto' | object[] | false} [opts.sidebar='auto']
+ * @param {(relPath: string) => string} [opts.mapOutputPath]
  * @returns {Array<{id: string, label: string, url: string}> | null}
  */
-export function buildNav({ contentDir, sidebar = 'auto' }) {
+export function buildNav({ contentDir, sidebar = 'auto', mapOutputPath }) {
   if (sidebar === false) return null;
   if (Array.isArray(sidebar)) {
-    return flattenExplicit(sidebar, contentDir);
+    return flattenExplicit(sidebar, contentDir, mapOutputPath);
   }
-  return autoWalk(contentDir);
+  return autoWalk(contentDir, mapOutputPath);
 }
 
 /**
@@ -68,7 +69,7 @@ export function injectNavDirective(source, { name = 'main', navPath = '/nav/main
 
 // ─── Explicit Starlight-format sidebar → flat entries ────────────────────────
 
-function flattenExplicit(items, contentDir) {
+function flattenExplicit(items, contentDir, mapOutputPath) {
   const out = [];
   for (const item of items) {
     if (item == null) continue;
@@ -78,7 +79,7 @@ function flattenExplicit(items, contentDir) {
     // item slug (which already encodes the path), since SFMD shortcut
     // definitions do not allow dots in ids per the spec.
     if (Array.isArray(item.items)) {
-      out.push(...flattenExplicit(item.items, contentDir));
+      out.push(...flattenExplicit(item.items, contentDir, mapOutputPath));
       continue;
     }
 
@@ -87,7 +88,7 @@ function flattenExplicit(items, contentDir) {
       const leaf = item.slug.split('/').pop();
       const id = item.slug.replace(/\//g, '-');
       const label = item.label ?? readTitleFromSlug(contentDir, item.slug) ?? humanize(leaf);
-      out.push({ id, label, url: `/${item.slug}.md` });
+      out.push({ id, label, url: urlForSourceRel(`${item.slug}.md`, mapOutputPath) });
       continue;
     }
 
@@ -102,7 +103,7 @@ function flattenExplicit(items, contentDir) {
 
 // ─── Auto: walk contentDir to derive a sidebar ───────────────────────────────
 
-function autoWalk(contentDir) {
+function autoWalk(contentDir, mapOutputPath) {
   if (!fs.existsSync(contentDir)) return [];
   const entries = [];
 
@@ -117,7 +118,7 @@ function autoWalk(contentDir) {
     entries.push({
       id: slug,
       label: readTitleFromFile(filePath) ?? humanize(slug),
-      url: `/${slug}.md`,
+      url: urlForSourceRel(file, mapOutputPath),
     });
   }
 
@@ -138,12 +139,17 @@ function autoWalk(contentDir) {
       entries.push({
         id,
         label: readTitleFromFile(filePath) ?? humanize(leaf),
-        url: `/${slug}.md`,
+        url: urlForSourceRel(rel, mapOutputPath),
       });
     }
   }
 
   return entries;
+}
+
+function urlForSourceRel(relPath, mapOutputPath) {
+  const outPath = mapOutputPath ? mapOutputPath(relPath) : relPath;
+  return '/' + String(outPath).replace(/\\/g, '/').replace(/^\/+/, '');
 }
 
 function walkMd(dir) {

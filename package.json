@@ -1,9 +1,12 @@
 {
   "name": "@string-os/astro-sfmd",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "description": "Astro integration for building SFMD-native sites. Dual output: styled HTML for browsers, raw markdown for AI agents.",
   "license": "MIT",
+  "bin": {
+    "astro-sfmd": "./scripts/cli.mjs"
+  },
   "exports": {
     ".": "./src/sfmd.ts",
     "./integration": "./src/integration.mjs",
