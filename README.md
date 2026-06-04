@@ -1,6 +1,6 @@
 # @string-os/astro-sfmd
 
-Build SFMD-native sites with Astro. Every page ships in two formats from the same source: styled HTML for browsers, raw markdown for AI agents — at predictable parallel URLs.
+Build SFMD-native sites with Astro. Astro keeps building the human HTML site; `astro-sfmd` adds the matching agent surface beside it.
 
 ```
 /start/quickstart/    → HTML  (humans)
@@ -35,6 +35,7 @@ What the integration adds:
 
 1. **Remark plugin** that strips `.md` from local link URLs in the HTML output, so humans land on `/start/quickstart/` instead of being served the raw markdown.
 2. **Post-build mirror** that copies your `.md` source tree into `dist/` so each page is also reachable as `/start/quickstart.md`. The mirrored files keep their `.md` links intact, so agent-driven traversal chains (raw → raw) still work.
+3. **Agent nav** that can generate `/nav/main.md` from a Starlight-style sidebar and inject `[!nav:main](/nav/main.md)` into mirrored pages.
 
 Options:
 
@@ -43,6 +44,21 @@ Options:
 | `contentDir` | (required) | Path to source `.md` files relative to project root |
 | `stripMdLinksInHtml` | `true` | Set `false` to leave `.md` in HTML link URLs |
 | `mirror` | `true` | Set `false` to skip the source-mirror (e.g. SSR) |
+| `sidebar` | `'auto'` | Pass a Starlight sidebar array, `'auto'`, or `false` |
+| `navName` | `'main'` | Name for the generated SFMD nav |
+| `mapOutputPath` | route twin | Rewrite mirrored SFMD paths when Astro routes differ from the content tree |
+
+For default-language i18n sites, map the source tree to the public route tree:
+
+```js
+sfmd({
+  contentDir: 'content',
+  mapOutputPath(rel) {
+    rel = rel.startsWith('en/') ? rel.slice('en/'.length) : rel;
+    return rel.replace(/\/index\.md$/, '.md');
+  },
+});
+```
 
 ## B. Build a fully custom SFMD site (no Starlight)
 
@@ -88,19 +104,20 @@ const { page } = Astro.props;
 </Base>
 ```
 
-Add to `package.json`:
+Add the integration to `astro.config.mjs`:
 
-```json
-{
-  "scripts": {
-    "dev": "astro dev",
-    "build": "astro build && node node_modules/@string-os/astro-sfmd/scripts/copy-sfmd.mjs"
-  }
-}
+```js
+import sfmd from '@string-os/astro-sfmd/integration';
+
+export default defineConfig({
+  integrations: [
+    sfmd({ contentDir: 'content' }),
+  ],
+});
 ```
 
 ```bash
-npm run build
+astro build
 ```
 
 Output:
@@ -113,16 +130,24 @@ dist/
 
 ## Deployment
 
-**Vercel / Cloudflare / static hosts** — both URL forms (`/path/` and `/path.md`) are served as static files. `.md` is auto-detected as `text/markdown`.
+**Static hosts (GitHub Pages, S3, simple CDNs)** — both URL forms (`/path/` and `/path.md`) are served as static files. Agents should request `.md` URLs directly. No middleware is required or possible.
 
-**With Accept-header negotiation** (optional, SSR setups) — add the middleware:
+**Vercel with Accept-header negotiation** — generate Routing Middleware:
+
+```bash
+npx astro-sfmd init --vercel
+```
+
+This writes `middleware.ts` at the project root. Browsers keep receiving Astro's static HTML; requests with `Accept: text/markdown` are rewritten to the parallel `.md` file. Use `--force` to overwrite an existing middleware file.
+
+**Astro dev / SSR middleware** — for non-static Astro middleware use:
 
 ```js
 // src/middleware.ts
 export { onRequest } from '@string-os/astro-sfmd/middleware';
 ```
 
-This serves the `.md` source when a request includes `Accept: text/markdown`, even at the bare `/path` URL. Useful when you don't want to teach agents the `.md` suffix convention.
+Cloudflare and other deploy presets can use the same `negotiateSfmd()` core later.
 
 ## What it does (full feature list)
 
@@ -130,7 +155,8 @@ This serves the `.md` source when a request includes `Accept: text/markdown`, ev
 - **HTML link rewriting** — strips `.md` from local link URLs in HTML so humans get pretty URLs while raw `.md` files keep traversable links.
 - **SFMD parser** (option B only) — reads SFMD, strips directives (`[!nav:]`, `[!include:]`, action blocks, block markers), resolves shortcuts (`[@id Label](url)` → `[Label](url)`), and renders HTML.
 - **Auto-built nav** (option B only) — `[!nav:name](path)` in your markdown becomes a sidebar.
-- **Optional middleware** — Accept-header content negotiation.
+- **Vercel middleware scaffold** — `astro-sfmd init --vercel`.
+- **Optional Astro middleware** — dev/SSR Accept-header content negotiation.
 - **Optional blog index generator** — `copy-sfmd.mjs` script also auto-generates an index `.md` for any `blog/` directory containing posts.
 
 ## Choosing a path
