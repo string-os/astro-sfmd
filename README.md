@@ -7,7 +7,40 @@ Build SFMD-native sites with Astro. Astro keeps building the human HTML site; `a
 /start/quickstart.md  → raw   (AI agents)
 ```
 
-Two ways to use it.
+Three ways to use it.
+
+## 0. Scaffold a brand-new site in one command (`astro-sfmd new`)
+
+The fastest path — generate a complete, buildable starter site (landing + about page, optional blog and docs), already wired with the integration and a deploy workflow:
+
+```bash
+npx astro-sfmd new my-site --github-pages --blog --docs
+cd my-site
+npm install
+npm run build      # dist/ with HTML + .md twins
+```
+
+```
+astro-sfmd new <dir> [--github-pages|--vercel] [--blog] [--docs] [--force]
+```
+
+| Flag | Effect |
+|---|---|
+| `--github-pages` | Target static GitHub Pages (default host). Also writes `.github/workflows/deploy.yml`. |
+| `--vercel` | Target Vercel (runtime Accept-negotiation; run `init --vercel` for middleware). |
+| `--blog` | Add a dated sample post with an auto-generated index. |
+| `--docs` | Add a sample docs section. |
+| `--force` | Scaffold into a non-empty directory / overwrite. |
+
+The generated site keeps all content as markdown under `content/`, reuses the exported `Base.astro` layout, and renders through the package's `parseSfmdFile`/`listContentFiles` helpers — so every page ships as both styled HTML and a raw `.md` twin.
+
+To add a GitHub Pages deploy workflow to an **existing** site:
+
+```bash
+npx astro-sfmd init --github-pages
+```
+
+This writes `.github/workflows/deploy.yml` (Astro → GitHub Pages: `checkout` → setup node → `npm ci && npm run build` → `upload-pages-artifact` → `deploy-pages`). One-time manual step: repo **Settings → Pages → Source = "GitHub Actions"**. For a project page served at `https://<user>.github.io/<repo>/`, set `base: '/<repo>/'` in `astro.config.mjs`.
 
 ## A. Add to an existing Astro site (Starlight, vanilla, anything)
 
@@ -130,7 +163,7 @@ dist/
 
 ## Deployment
 
-**Static hosts (GitHub Pages, S3, simple CDNs)** — both URL forms (`/path/` and `/path.md`) are served as static files. Agents should request `.md` URLs directly. No middleware is required or possible.
+**Static hosts (GitHub Pages, S3, simple CDNs)** — both URL forms (`/path/` and `/path.md`) are served as static files. Agents should request `.md` URLs directly. No middleware is required or possible. For GitHub Pages specifically, scaffold the deploy workflow with `astro-sfmd init --github-pages` (or get it for free via `astro-sfmd new --github-pages`), then set **Settings → Pages → Source = "GitHub Actions"**.
 
 **Vercel with Accept-header negotiation** — generate Routing Middleware:
 
@@ -155,6 +188,8 @@ Cloudflare and other deploy presets can use the same `negotiateSfmd()` core late
 - **HTML link rewriting** — strips `.md` from local link URLs in HTML so humans get pretty URLs while raw `.md` files keep traversable links.
 - **SFMD parser** (option B only) — reads SFMD, strips directives (`[!nav:]`, `[!include:]`, action blocks, block markers), resolves shortcuts (`[@id Label](url)` → `[Label](url)`), and renders HTML.
 - **Auto-built nav** (option B only) — `[!nav:name](path)` in your markdown becomes a sidebar.
+- **One-command site scaffold** — `astro-sfmd new <dir>` generates a complete starter (landing, about, optional blog/docs) wired for GitHub Pages or Vercel.
+- **GitHub Pages workflow scaffold** — `astro-sfmd init --github-pages` writes `.github/workflows/deploy.yml`.
 - **Vercel middleware scaffold** — `astro-sfmd init --vercel`.
 - **Optional Astro middleware** — dev/SSR Accept-header content negotiation.
 - **Optional blog index generator** — `copy-sfmd.mjs` script also auto-generates an index `.md` for any `blog/` directory containing posts.
