@@ -34,6 +34,27 @@ astro-sfmd new <dir> [--github-pages|--vercel] [--blog] [--docs] [--force]
 
 The generated site keeps all content as markdown under `content/`, reuses the exported `Base.astro` layout, and renders through the package's `parseSfmdFile`/`listContentFiles` helpers — so every page ships as both styled HTML and a raw `.md` twin.
 
+### Validate a site (`astro-sfmd validate`)
+
+Before you build or deploy, check that the content tree is coherent — pure Node, no build required:
+
+```bash
+npx astro-sfmd validate my-site         # structural + content checks
+npx astro-sfmd validate my-site --build # also build and verify HTML + .md twins
+```
+
+```
+astro-sfmd validate [dir] [--build]
+```
+
+It checks that:
+
+- every `content/**/*.md` has frontmatter with at least a `title` (and a `date` on blog posts),
+- the landing page `content/index.md` exists and `content/` is non-empty,
+- every internal `.md` link — including `[!nav:…]` targets and `[@id Label](…)` shortcuts — resolves to a real file.
+
+With `--build` it then runs `npm run build` and confirms every page ships **both** `dist/<page>/index.html` and the `dist/<page>.md` twin. It exits non-zero with a clear list of problems on failure, and prints a one-line summary on success — so it drops cleanly into CI or an agent's scaffold→validate→build loop.
+
 To add a GitHub Pages deploy workflow to an **existing** site:
 
 ```bash
@@ -189,6 +210,7 @@ Cloudflare and other deploy presets can use the same `negotiateSfmd()` core late
 - **SFMD parser** (option B only) — reads SFMD, strips directives (`[!nav:]`, `[!include:]`, action blocks, block markers), resolves shortcuts (`[@id Label](url)` → `[Label](url)`), and renders HTML.
 - **Auto-built nav** (option B only) — `[!nav:name](path)` in your markdown becomes a sidebar.
 - **One-command site scaffold** — `astro-sfmd new <dir>` generates a complete starter (landing, about, optional blog/docs) wired for GitHub Pages or Vercel.
+- **Site validator** — `astro-sfmd validate [dir]` checks frontmatter, required files, and internal `.md` link integrity (pure Node); `--build` also verifies HTML + `.md` twins in `dist/`.
 - **GitHub Pages workflow scaffold** — `astro-sfmd init --github-pages` writes `.github/workflows/deploy.yml`.
 - **Vercel middleware scaffold** — `astro-sfmd init --vercel`.
 - **Optional Astro middleware** — dev/SSR Accept-header content negotiation.

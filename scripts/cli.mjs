@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'node:child_process';
 
 const args = process.argv.slice(2);
 const cmd = args[0];
@@ -16,6 +17,9 @@ switch (cmd) {
     break;
   case 'init':
     cmdInit(args.slice(1));
+    break;
+  case 'validate':
+    cmdValidate(args.slice(1));
     break;
   default:
     console.error(`astro-sfmd: unknown command: ${cmd}`);
@@ -149,6 +153,170 @@ function initGitHubPages(force) {
 }
 
 // ---------------------------------------------------------------------------
+// `validate` — pure-Node content + structure check (zero String dependency)
+// ---------------------------------------------------------------------------
+
+function cmdValidate(argv) {
+  const positionals = argv.filter((a) => !a.startsWith('--'));
+  const dir = positionals[0] || '.';
+  const root = path.resolve(process.cwd(), dir);
+  const doBuild = argv.includes('--build');
+  const contentDir = path.join(root, 'content');
+
+  const errors = [];
+  const warnings = [];
+
+  // 1. A scaffolded SFMD site must have a content/ tree.
+  if (!fs.existsSync(contentDir) || !fs.statSync(contentDir).isDirectory()) {
+    console.error(`astro-sfmd validate: no content/ directory at ${root}`);
+    console.error('Expected a site scaffolded by `astro-sfmd new` (markdown under content/).');
+    process.exit(1);
+  }
+
+  // 2. Landing page is required.
+  if (!fs.existsSync(path.join(contentDir, 'index.md'))) {
+    errors.push('content/index.md is missing (the landing page).');
+  }
+
+  const files = walkMdFiles(contentDir);
+  if (files.length === 0) {
+    errors.push('content/ has no .md files.');
+  }
+
+  let linkCount = 0;
+  for (const file of files) {
+    const rel = path.relative(root, file);
+    const raw = fs.readFileSync(file, 'utf-8');
+
+    // 3. Frontmatter: every page needs at least `title`; blog posts need `date`.
+    const fm = parseFrontmatter(raw);
+    if (!fm) {
+      errors.push(`${rel}: missing frontmatter (a leading \`---\` block with at least \`title\`).`);
+    } else {
+      if (!fm.title) errors.push(`${rel}: frontmatter is missing \`title\`.`);
+      const relFromContent = path.relative(contentDir, file);
+      const inBlog = relFromContent.split(path.sep)[0] === 'blog';
+      const isPost = inBlog && path.basename(file) !== 'index.md';
+      if (isPost) {
+        if (!fm.date) {
+          errors.push(`${rel}: blog post is missing \`date\` in frontmatter.`);
+        } else if (!/^\d{4}-\d{2}-\d{2}/.test(fm.date)) {
+          warnings.push(`${rel}: \`date\` "${fm.date}" is not ISO (YYYY-MM-DD).`);
+        }
+      }
+    }
+
+    // 4. Internal .md links (and [!nav:...] / [@id ...] targets) must resolve.
+    for (const href of extractLocalMdLinks(raw)) {
+      linkCount++;
+      const target = path.resolve(path.dirname(file), href);
+      if (!fs.existsSync(target)) {
+        errors.push(`${rel}: broken link -> ${href} (no file at ${path.relative(root, target)}).`);
+      }
+    }
+  }
+
+  // 5. Optional build check: confirm both surfaces (HTML + .md twin) are emitted.
+  let twinSummary = '';
+  if (doBuild) {
+    console.log('Running build (npm run build) to verify dual output...');
+    let built = true;
+    try {
+      execSync('npm run build', { cwd: root, stdio: 'inherit' });
+    } catch {
+      built = false;
+      errors.push('build failed (`npm run build` exited non-zero).');
+    }
+    const distDir = path.join(root, 'dist');
+    if (built && !fs.existsSync(distDir)) {
+      errors.push('build produced no dist/ directory.');
+    } else if (built) {
+      const htmls = walkAllFiles(distDir).filter((f) => path.basename(f) === 'index.html');
+      let twins = 0;
+      for (const html of htmls) {
+        const htmlDir = path.dirname(html);
+        const twin =
+          path.resolve(htmlDir) === path.resolve(distDir)
+            ? path.join(distDir, 'index.md')
+            : htmlDir + '.md';
+        if (fs.existsSync(twin)) {
+          twins++;
+        } else {
+          errors.push(
+            `dist: no .md twin for ${path.relative(root, html)} (expected ${path.relative(root, twin)}).`,
+          );
+        }
+      }
+      twinSummary = `, ${twins}/${htmls.length} built pages have a .md twin`;
+    }
+  }
+
+  // 6. Report.
+  console.log('');
+  if (warnings.length) {
+    console.log(`${warnings.length} warning(s):`);
+    for (const w of warnings) console.log(`  ! ${w}`);
+    console.log('');
+  }
+  if (errors.length === 0) {
+    console.log(
+      `OK — ${files.length} content file(s), ${linkCount} internal link(s) resolved${twinSummary}.`,
+    );
+    process.exit(0);
+  }
+  console.error(`FAIL — ${errors.length} problem(s):`);
+  for (const e of errors) console.error(`  - ${e}`);
+  process.exit(1);
+}
+
+function parseFrontmatter(raw) {
+  const m = raw.match(/^---\n([\s\S]*?)\n---/);
+  if (!m) return null;
+  const fields = {};
+  for (const line of m[1].split('\n')) {
+    const km = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    if (km) fields[km[1]] = km[2].trim();
+  }
+  return fields;
+}
+
+// Extract local .md link targets from any [...](href) including [!nav:...] and
+// [@id Label](href) shortcuts. Skips external/anchor-only links.
+function extractLocalMdLinks(body) {
+  const out = [];
+  const re = /\]\(([^)\s]+)\)/g;
+  let m;
+  while ((m = re.exec(body)) !== null) {
+    let href = m[1].replace(/#.*$/, '');
+    if (!href) continue;
+    if (/^(https?:|mailto:|tel:|\/\/)/.test(href)) continue;
+    if (!href.endsWith('.md')) continue;
+    out.push(href);
+  }
+  return out;
+}
+
+function walkMdFiles(dir) {
+  const out = [];
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) out.push(...walkMdFiles(full));
+    else if (e.name.endsWith('.md')) out.push(full);
+  }
+  return out;
+}
+
+function walkAllFiles(dir) {
+  const out = [];
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) out.push(...walkAllFiles(full));
+    else out.push(full);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Help
 // ---------------------------------------------------------------------------
 
@@ -157,6 +325,7 @@ function printHelp() {
 
 Usage:
   astro-sfmd new <dir> [--github-pages|--vercel] [--blog] [--docs] [--force]
+  astro-sfmd validate [dir] [--build]
   astro-sfmd init --github-pages [--force]
   astro-sfmd init --vercel [--force]
 
@@ -165,6 +334,11 @@ Commands:
                    blog/docs), wired with the astro-sfmd integration. Emits
                    styled HTML for people and mirrored .md for agents.
                    Host defaults to --github-pages.
+  validate         Check a site's content/ tree: frontmatter (title; date on
+                   blog posts), required files, and internal .md link targets.
+                   Pure Node, no build needed. Exits non-zero on problems.
+                   With --build, also runs the build and verifies every page
+                   has both an index.html and a .md twin in dist/.
   init --github-pages   Add .github/workflows/deploy.yml (Astro -> GitHub Pages).
   init --vercel         Add middleware.ts for Vercel Accept-negotiation.
 
@@ -173,6 +347,7 @@ Flags:
   --vercel         Target Vercel (middleware does runtime Accept negotiation).
   --blog           Include a sample dated blog post with auto-generated index.
   --docs           Include a sample docs section.
+  --build          (validate) Run the build and verify HTML + .md twins in dist/.
   --force          Overwrite existing files / scaffold into a non-empty dir.
 
 On a static host like GitHub Pages there is no middleware, but the build-time
@@ -343,12 +518,14 @@ This is a sample content page. Edit \`content/about.md\` or add your own
 }
 
 function tplNavMain({ blog, docs }) {
+  // Nav lives at content/nav/main.md, so links are relative to that dir:
+  // `../` steps back up to the content root before addressing each page.
   const lines = [
-    '[@home Home](./index.md)',
-    '[@about About](./about.md)',
+    '[@home Home](../index.md)',
+    '[@about About](../about.md)',
   ];
-  if (blog) lines.push('[@blog Blog](./blog/index.md)');
-  if (docs) lines.push('[@docs Docs](./docs/index.md)');
+  if (blog) lines.push('[@blog Blog](../blog/index.md)');
+  if (docs) lines.push('[@docs Docs](../docs/index.md)');
   return `---
 title: Navigation
 ---
