@@ -96,7 +96,7 @@ export default function sfmd(options = {}) {
         if (stripMdLinksInHtml) {
           updateConfig({
             markdown: {
-              remarkPlugins: [remarkStripMdLinks],
+              remarkPlugins: [[remarkStripMdLinks, { contentDir, mapOutputPath: outputPathMapper }]],
             },
           });
         }

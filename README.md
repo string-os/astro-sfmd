@@ -87,9 +87,13 @@ export default defineConfig({
 
 What the integration adds:
 
-1. **Remark plugin** that strips `.md` from local link URLs in the HTML output, so humans land on `/start/quickstart/` instead of being served the raw markdown.
+1. **Remark plugin** that converts local `.md` links to HTML routes in the HTML output, so humans land on `/start/quickstart/` instead of being served the raw markdown. Relative links are resolved from the source file before conversion, so `docs/archive.md` linking to `./w/one.md` becomes `/docs/w/one`, not `/docs/archive/w/one`.
 2. **Post-build mirror** that copies your `.md` source tree into `dist/` so each page is also reachable as `/start/quickstart.md`. The mirrored files keep their `.md` links intact, so agent-driven traversal chains (raw → raw) still work.
 3. **Agent nav** that can generate `/nav/main.md` from a Starlight-style sidebar and inject `[!nav:main](/nav/main.md)` into mirrored pages.
+
+In markdown, `.md` links mean "link to the corresponding page" and are converted for the
+human HTML surface. If you intentionally need a browser link to the raw markdown twin, use
+an explicit HTML anchor, for example `<a href="/start/quickstart.md">Markdown</a>`.
 
 Options:
 
@@ -206,7 +210,7 @@ Cloudflare and other deploy presets can use the same `negotiateSfmd()` core late
 ## What it does (full feature list)
 
 - **Source mirror** — copies `*.md` from your content directory into the build output preserving paths.
-- **HTML link rewriting** — strips `.md` from local link URLs in HTML so humans get pretty URLs while raw `.md` files keep traversable links.
+- **HTML link rewriting** — converts local `.md` links to HTML routes so humans get pretty URLs while raw `.md` files keep traversable links.
 - **SFMD parser** (option B only) — reads SFMD, strips directives (`[!nav:]`, `[!include:]`, action blocks, block markers), resolves shortcuts (`[@id Label](url)` → `[Label](url)`), and renders HTML.
 - **Auto-built nav** (option B only) — `[!nav:name](path)` in your markdown becomes a sidebar.
 - **One-command site scaffold** — `astro-sfmd new <dir>` generates a complete starter (landing, about, optional blog/docs) wired for GitHub Pages or Vercel.
